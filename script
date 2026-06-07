@@ -17,48 +17,52 @@ local fastMode = false
 local infiniteJump = false
 local noclip = false
 local flying = false
+local draggable = true
 
 local teleportDistance = 200
-local draggable = true
+local jumpPowerValue = 50
+
+local noclipConnection
+local flightConnection
+local bodyVelocity
 
 ------------------------------------------------
 -- GUI
 ------------------------------------------------
 
 local gui = Instance.new("ScreenGui")
-gui.Name = "TesterGUI"
+gui.Name = "DevUI"
 gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 240, 0, 430)
-frame.Position = UDim2.new(0, 20, 0, 20)
-frame.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+frame.Size = UDim2.new(0,240,0,520)
+frame.Position = UDim2.new(0,20,0,20)
+frame.BackgroundColor3 = Color3.fromRGB(70,70,70)
 frame.BorderSizePixel = 0
 frame.Parent = gui
 
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0,10)
 
 ------------------------------------------------
--- BUTTON STYLE
+-- UI HELPERS
 ------------------------------------------------
 
-local function styleButton(b)
-	b.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+local function style(b)
+	b.BackgroundColor3 = Color3.fromRGB(100,100,100)
 	b.TextColor3 = Color3.fromRGB(255,255,255)
-	b.BorderSizePixel = 0
 	b.Font = Enum.Font.Gotham
 	b.TextSize = 14
-	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
+	Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
 end
 
 local function makeButton(text, y)
 	local b = Instance.new("TextButton")
-	b.Size = UDim2.new(1, -20, 0, 35)
-	b.Position = UDim2.new(0, 10, 0, y)
+	b.Size = UDim2.new(1,-20,0,35)
+	b.Position = UDim2.new(0,10,0,y)
 	b.Text = text
 	b.Parent = frame
-	styleButton(b)
+	style(b)
 	return b
 end
 
@@ -74,15 +78,47 @@ local dragBtn = makeButton("Draggable: ON", 190)
 local teleportBtn = makeButton("Teleport", 235)
 
 ------------------------------------------------
--- SPEED
+-- CHARACTER HELPERS
+------------------------------------------------
+
+local function getHumanoid()
+	local char = player.Character
+	return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function getRoot()
+	local char = player.Character
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+------------------------------------------------
+-- SPEED + JUMP
 ------------------------------------------------
 
 local function updateSpeed()
-	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	local hum = getHumanoid()
 	if hum then
 		hum.WalkSpeed = fastMode and FAST_SPEED or NORMAL_SPEED
 	end
 end
+
+local function updateJump()
+	local hum = getHumanoid()
+	if hum then
+		hum.UseJumpPower = true
+		hum.JumpPower = math.clamp(jumpPowerValue, 16, 200)
+	end
+end
+
+player.CharacterAdded:Connect(function()
+	task.wait(0.5)
+	updateSpeed()
+	updateJump()
+end)
+
+------------------------------------------------
+-- SPEED
+------------------------------------------------
 
 speedBtn.MouseButton1Click:Connect(function()
 	fastMode = not fastMode
@@ -94,9 +130,6 @@ end)
 -- FLIGHT
 ------------------------------------------------
 
-local bodyVelocity
-local flightConnection
-
 local function stopFlight()
 	flying = false
 	if flightConnection then flightConnection:Disconnect() end
@@ -104,8 +137,7 @@ local function stopFlight()
 end
 
 local function startFlight()
-	local char = player.Character
-	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local root = getRoot()
 	if not root then return end
 
 	flying = true
@@ -140,14 +172,13 @@ end)
 
 jumpBtn.MouseButton1Click:Connect(function()
 	infiniteJump = not infiniteJump
-	jumpBtn.Text = infiniteJump and "Infinite Jump: ON" or "OFF"
+	jumpBtn.Text = infiniteJump and "Infinite Jump: ON" or "Infinite Jump: OFF"
 end)
 
 UserInputService.JumpRequest:Connect(function()
-	if not infiniteJump then return end
-	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if hum then
-		hum:ChangeState(Enum.HumanoidStateType.Jumping)
+	if infiniteJump then
+		local hum = getHumanoid()
+		if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
 	end
 end)
 
@@ -157,12 +188,18 @@ end)
 
 noclipBtn.MouseButton1Click:Connect(function()
 	noclip = not noclip
-	noclipBtn.Text = noclip and "Noclip: ON" or "OFF"
+	noclipBtn.Text = noclip and "Noclip: ON" or "Noclip: OFF"
+
+	if noclipConnection then
+		noclipConnection:Disconnect()
+		noclipConnection = nil
+	end
 
 	if noclip then
-		RunService.Stepped:Connect(function()
+		noclipConnection = RunService.Stepped:Connect(function()
 			local char = player.Character
 			if not char then return end
+
 			for _,v in ipairs(char:GetDescendants()) do
 				if v:IsA("BasePart") then
 					v.CanCollide = false
@@ -177,119 +214,138 @@ end)
 ------------------------------------------------
 
 teleportBtn.MouseButton1Click:Connect(function()
-	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	local root = getRoot()
 	if root then
 		root.CFrame += root.CFrame.LookVector * teleportDistance
 	end
 end)
 
 ------------------------------------------------
--- SLIDER
+-- TELEPORT SLIDER
 ------------------------------------------------
 
-local sliderLabel = Instance.new("TextLabel")
-sliderLabel.Size = UDim2.new(1, -10, 0, 20)
-sliderLabel.Position = UDim2.new(0, 5, 0, 280)
-sliderLabel.BackgroundTransparency = 1
-sliderLabel.TextColor3 = Color3.fromRGB(255,255,255)
-sliderLabel.Font = Enum.Font.Gotham
-sliderLabel.TextSize = 14
-sliderLabel.Text = "Teleport Distance: 200"
-sliderLabel.Parent = frame
+local tLabel = Instance.new("TextLabel")
+tLabel.Size = UDim2.new(1,-10,0,20)
+tLabel.Position = UDim2.new(0,5,0,280)
+tLabel.BackgroundTransparency = 1
+tLabel.TextColor3 = Color3.new(1,1,1)
+tLabel.Text = "Teleport: 200"
+tLabel.Parent = frame
 
-local slider = Instance.new("Frame")
-slider.Size = UDim2.new(1, -20, 0, 8)
-slider.Position = UDim2.new(0, 10, 0, 305)
-slider.BackgroundColor3 = Color3.fromRGB(60,60,60)
-slider.Parent = frame
+local tBar = Instance.new("Frame")
+tBar.Size = UDim2.new(1,-20,0,8)
+tBar.Position = UDim2.new(0,10,0,305)
+tBar.BackgroundColor3 = Color3.fromRGB(60,60,60)
+tBar.Parent = frame
 
-local fill = Instance.new("Frame")
-fill.Size = UDim2.new(0.2,0,1,0)
-fill.BackgroundColor3 = Color3.fromRGB(0,170,255)
-fill.Parent = slider
+local tFill = Instance.new("Frame")
+tFill.Size = UDim2.new(0.2,0,1,0)
+tFill.BackgroundColor3 = Color3.fromRGB(0,170,255)
+tFill.Parent = tBar
 
-local draggingSlider = false
+local draggingT = false
 
-local function updateSlider(x)
-	local percent = math.clamp(
-		(x - slider.AbsolutePosition.X) / slider.AbsoluteSize.X,
-		0,
-		1
-	)
-
-	fill.Size = UDim2.new(percent,0,1,0)
-	teleportDistance = math.floor(50 + (950 * percent))
-	sliderLabel.Text = "Teleport Distance: " .. teleportDistance
+local function updateT(x)
+	local p = math.clamp((x - tBar.AbsolutePosition.X)/tBar.AbsoluteSize.X,0,1)
+	teleportDistance = math.floor(50 + 950*p)
+	tFill.Size = UDim2.new(p,0,1,0)
+	tLabel.Text = "Teleport: "..teleportDistance
 end
 
-slider.InputBegan:Connect(function(i)
+tBar.InputBegan:Connect(function(i)
+	if i.UserInputType == Enum.UserInputType.MouseButton1 then draggingT = true updateT(i.Position.X) end
+end)
+
+UserInputService.InputChanged:Connect(function(i)
+	if draggingT and i.UserInputType == Enum.UserInputType.MouseMovement then updateT(i.Position.X) end
+end)
+
+UserInputService.InputEnded:Connect(function(i)
+	if i.UserInputType == Enum.UserInputType.MouseButton1 then draggingT = false end
+end)
+
+------------------------------------------------
+-- JUMP SLIDER (16–200)
+------------------------------------------------
+
+local jLabel = Instance.new("TextLabel")
+jLabel.Size = UDim2.new(1,-10,0,20)
+jLabel.Position = UDim2.new(0,5,0,335)
+jLabel.BackgroundTransparency = 1
+jLabel.TextColor3 = Color3.new(1,1,1)
+jLabel.Text = "Jump: 50"
+jLabel.Parent = frame
+
+local jBar = Instance.new("Frame")
+jBar.Size = UDim2.new(1,-20,0,8)
+jBar.Position = UDim2.new(0,10,0,360)
+jBar.BackgroundColor3 = Color3.fromRGB(60,60,60)
+jBar.Parent = frame
+
+local jFill = Instance.new("Frame")
+jFill.Size = UDim2.new(0.2,0,1,0)
+jFill.BackgroundColor3 = Color3.fromRGB(0,255,100)
+jFill.Parent = jBar
+
+local draggingJ = false
+
+local function updateJ(x)
+	local p = math.clamp((x - jBar.AbsolutePosition.X)/jBar.AbsoluteSize.X,0,1)
+	jumpPowerValue = math.floor(16 + 184*p)
+	jFill.Size = UDim2.new(p,0,1,0)
+	jLabel.Text = "Jump: "..jumpPowerValue
+	updateJump()
+end
+
+jBar.InputBegan:Connect(function(i)
+	if i.UserInputType == Enum.UserInputType.MouseButton1 then draggingJ = true updateJ(i.Position.X) end
+end)
+
+UserInputService.InputChanged:Connect(function(i)
+	if draggingJ and i.UserInputType == Enum.UserInputType.MouseMovement then updateJ(i.Position.X) end
+end)
+
+UserInputService.InputEnded:Connect(function(i)
+	if i.UserInputType == Enum.UserInputType.MouseButton1 then draggingJ = false end
+end)
+
+------------------------------------------------
+-- DRAG UI
+------------------------------------------------
+
+local dragging, dragStart, startPos
+
+frame.InputBegan:Connect(function(i)
 	if i.UserInputType == Enum.UserInputType.MouseButton1 then
-		draggingSlider = true
-		updateSlider(i.Position.X)
+		dragging = true
+		dragStart = i.Position
+		startPos = frame.Position
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(i)
+	if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+		local d = i.Position - dragStart
+		frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
+			startPos.Y.Scale, startPos.Y.Offset + d.Y)
 	end
 end)
 
 UserInputService.InputEnded:Connect(function(i)
 	if i.UserInputType == Enum.UserInputType.MouseButton1 then
-		draggingSlider = false
-	end
-end)
-
-UserInputService.InputChanged:Connect(function(i)
-	if draggingSlider and i.UserInputType == Enum.UserInputType.MouseMovement then
-		updateSlider(i.Position.X)
-	end
-end)
-
-------------------------------------------------
--- DRAG TOGGLE
-------------------------------------------------
-
-dragBtn.MouseButton1Click:Connect(function()
-	draggable = not draggable
-	dragBtn.Text = draggable and "Draggable: ON" or "Draggable: OFF"
-end)
-
-local dragging, dragStart, startPos
-
-frame.InputBegan:Connect(function(input)
-	if not draggable then return end
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		dragging = true
-		dragStart = input.Position
-		startPos = frame.Position
-	end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-	if not draggable then return end
-	if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-		local delta = input.Position - dragStart
-		frame.Position = UDim2.new(
-			startPos.X.Scale,
-			startPos.X.Offset + delta.X,
-			startPos.Y.Scale,
-			startPos.Y.Offset + delta.Y
-		)
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		dragging = false
 	end
 end)
-
 ------------------------------------------------
 -- CREDITS
 ------------------------------------------------
 
 local credit = Instance.new("TextLabel")
 credit.Size = UDim2.new(1,0,0,20)
-credit.Position = UDim2.new(0,0,1,-22)
+credit.Position = UDim2.new(0,0,0,375)
 credit.BackgroundTransparency = 1
 credit.TextColor3 = Color3.fromRGB(200,200,200)
 credit.Font = Enum.Font.Gotham
 credit.TextSize = 13
-credit.Text = "by liltimmy the best scripter"
+credit.Text = "by liltimmy the best scripter ur gonna live with the extra space its need for the stuff to work i anit doing all dat"
 credit.Parent = frame
